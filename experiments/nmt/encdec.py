@@ -200,7 +200,7 @@ def get_batch_iterator(state, rng):
         can_fit=False,
         queue_size=1000,
         shuffle=state['shuffle'],
-        use_infinite_loop=state['use_infinite_loop'],
+        use_infinite_loop=state['use_infinite_loop'] and not state['reprocess_each_iteration'],
         max_len=state['seqlen'])
     return train_data
 

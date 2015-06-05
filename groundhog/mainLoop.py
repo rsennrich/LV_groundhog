@@ -22,6 +22,7 @@ class Unbuffered:
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
 
+import os
 import sys
 import traceback
 sys.stdout = Unbuffered(sys.stdout)
@@ -33,9 +34,13 @@ import gzip
 import time
 import signal
 import logging
+import shelve
+import copy
+import subprocess
 
 from groundhog.utils import print_mem, print_time
 from groundhog.utils import invert_dict
+from experiments.nmt import get_batch_iterator, rolling_dicts
 
 logger = logging.getLogger(__name__)
 
@@ -607,7 +612,29 @@ class MainLoop(object):
                             new_large2small_trgt = self.model.Dy_shelve[str(step_modulo)]
                             self.roll_vocab_update_dicts(new_large2small_src, new_large2small_trgt) # Done above for 0 or reloaded model
                         self.roll_vocab_large2small()
-                        tmp_batch = self.train_data.next(peek=True)
+                        try:
+                            tmp_batch = self.train_data.next(peek=True)
+                        except StopIteration:
+                            if self.state['reprocess_each_iteration']:
+                                logger.info("Reached end of file; re-preprocessing")
+                                subprocess.check_call(self.state['reprocess_each_iteration'], shell=True)
+                                if self.state['rolling_vocab']:
+                                    os.remove(self.state['Dx_file'])
+                                    os.remove(self.state['Dy_file'])
+                                    tmp_state = copy.deepcopy(self.state)
+                                    rolling_dicts.main(tmp_state)
+                                    with open(self.state['rolling_vocab_dict'], 'rb') as f:
+                                        self.model.rolling_vocab_dict = cPickle.load(f)
+                                    self.model.total_num_batches = max(self.model.rolling_vocab_dict)
+                                    self.model.Dx_shelve = shelve.open(self.state['Dx_file'])
+                                    self.model.Dy_shelve = shelve.open(self.state['Dy_file'])
+                                logger.debug("Load data")
+                                self.train_data = get_batch_iterator(self.state, numpy.random.RandomState(self.state['seed']))
+                                self.train_data.start(-1)
+                                self.algo.data = self.train_data
+                                tmp_batch = self.train_data.next(peek=True)
+                            else:
+                                raise
                         if (tmp_batch['x'][:,0].tolist(), tmp_batch['y'][:,0].tolist()) == self.model.rolling_vocab_dict[step_modulo]:
                             logger.debug("Identical first sentences. OK")
                         else:

@@ -132,6 +132,8 @@ def main():
         state['save_iter'] = -1
     if 'var_src_len' not in state:
         state['var_src_len'] = False
+    if 'reprocess_each_iteration' not in state:
+        state['reprocess_each_iteration'] = False
 
     rng = numpy.random.RandomState(state['seed'])
     enc_dec = RNNEncoderDecoder(state, rng, args.skip_init)
