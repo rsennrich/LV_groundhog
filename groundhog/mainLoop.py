@@ -631,6 +631,17 @@ class MainLoop(object):
                                 logger.debug("Load data")
                                 self.train_data = get_batch_iterator(self.state, numpy.random.RandomState(self.state['seed']))
                                 self.train_data.start(-1)
+                                self.timings['next_offset'] = -1
+
+                                step_modulo = self.step % self.model.total_num_batches
+                                if step_modulo in self.model.rolling_vocab_dict:
+                                    if not self.zero_or_reload:
+                                        self.roll_vocab_small2large() # Not necessary for 0 or when reloading a properly saved model
+                                        new_large2small_src = self.model.Dx_shelve[str(step_modulo)]
+                                        new_large2small_trgt = self.model.Dy_shelve[str(step_modulo)]
+                                        self.roll_vocab_update_dicts(new_large2small_src, new_large2small_trgt) # Done above for 0 or reloaded model
+                                    self.roll_vocab_large2small()
+
                                 self.algo.data = self.train_data
                                 tmp_batch = self.train_data.next(peek=True)
                             else:
