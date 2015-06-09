@@ -214,9 +214,9 @@ def parse_args():
     parser.add_argument("--ignore-unk",
             default=False, action="store_true",
             help="Ignore unknown words")
-    parser.add_argument("--source",
+    parser.add_argument("--source", , type=argparse.FileType('r'), default=sys.stdin,
             help="File of source sentences")
-    parser.add_argument("--trans",
+    parser.add_argument("--trans", , type=argparse.FileType('w'), default=sys.stdout,
             help="File to save translations in")
     parser.add_argument("--normalize",
             action="store_true", default=False,
@@ -351,50 +351,47 @@ def main():
             C[i] = 0
         null_unk_indices = [state['null_sym_target'],state['unk_sym_target']]
         update_dicts(null_unk_indices, d, D, C, args.num_common)
-        with open(args.source, 'r') as f:
-            for i, line in enumerate(f):
-                seqin = line.strip()
-                seq, parsed_in = parse_input(state, indx_word, seqin, idx2word=idict_src) # seq is the ndarray of indices
-                indices = []
-                for elt in seq[:-1]: # Exclude the EOL token
-                    if elt != 1: # Exclude OOV (1 will not be a key of topn)
-                        indices.extend(topn[elt]) # Add topn best unigram translations for each source word
-                output = update_dicts(indices, d, D, C, args.num_common)
-                if (i % args.change_every) == 0 and args.change_every > 0 and i > 0:
-                    output = True
-                if output:
-                    D_dict[prev_line] = D.copy() # Save dictionary for the lines preceding this one
-                    prev_line = i
-                    logger.info("%d" % i)
-                    output = False
-                    d = OrderedDict()
-                    if args.no_reset:
-                        C = D.copy()
-                    else:
-                        D = OrderedDict() # Full
-                        C = OrderedDict() # Allowed to reject
-                        for i in xrange(args.num_common):
-                            D[i] = 0
-                            C[i] = 0
-                    null_unk_indices = [state['null_sym_target'], state['unk_sym_target']]
-                    update_dicts(null_unk_indices, d, D, C, args.num_common)
-                    update_dicts(indices, d, D, C, args.num_common) # Assumes you cannot fill d with only 1 line
-            D_dict[prev_line] = D.copy()
+        f = args.source.readlines()
+        for i, line in enumerate(f):
+            seqin = line.strip()
+            seq, parsed_in = parse_input(state, indx_word, seqin, idx2word=idict_src) # seq is the ndarray of indices
+            indices = []
+            for elt in seq[:-1]: # Exclude the EOL token
+                if elt != 1: # Exclude OOV (1 will not be a key of topn)
+                    indices.extend(topn[elt]) # Add topn best unigram translations for each source word
+            output = update_dicts(indices, d, D, C, args.num_common)
+            if (i % args.change_every) == 0 and args.change_every > 0 and i > 0:
+                output = True
+            if output:
+                D_dict[prev_line] = D.copy() # Save dictionary for the lines preceding this one
+                prev_line = i
+                logger.info("%d" % i)
+                output = False
+                d = OrderedDict()
+                if args.no_reset:
+                    C = D.copy()
+                else:
+                    D = OrderedDict() # Full
+                    C = OrderedDict() # Allowed to reject
+                    for i in xrange(args.num_common):
+                        D[i] = 0
+                        C[i] = 0
+                null_unk_indices = [state['null_sym_target'], state['unk_sym_target']]
+                update_dicts(null_unk_indices, d, D, C, args.num_common)
+                update_dicts(indices, d, D, C, args.num_common) # Assumes you cannot fill d with only 1 line
+        D_dict[prev_line] = D.copy()
 
     if args.source and args.trans:
         # Actually only beam search is currently supported here
         assert beam_search
         assert args.beam_size
 
-        fsrc = open(args.source, 'r')
-        ftrans = open(args.trans, 'w')
-
         start_time = time.time()
 
         n_samples = args.beam_size
         total_cost = 0.0
         logging.debug("Beam size: {}".format(n_samples))
-        for i, line in enumerate(fsrc):
+        for i, line in enumerate(f):
             seqin = line.strip()
             seq, parsed_in = parse_input(state, indx_word, seqin, idx2word=idict_src) # seq is the ndarray of indices
             # For now, keep all input words in the model.
@@ -451,23 +448,23 @@ def main():
                         num_common_words *= 2
             if not args.n_best:
                 best = numpy.argmin(costs)
-                print >>ftrans, trans[best]
+                print >>args.trans, trans[best]
             else:
                 order = numpy.argsort(costs)
                 best = order[0]
                 for elt in order:
-                    print >>ftrans, str(i+args.start) + ' ||| ' + trans[elt] + ' ||| ' + str(costs[elt])
+                    print >>args.trans, str(i+args.start) + ' ||| ' + trans[elt] + ' ||| ' + str(costs[elt])
             if args.verbose:
                 print "Translation:", trans[best]
             total_cost += costs[best]
             if (i + 1)  % 100 == 0:
-                ftrans.flush()
+                args.trans.flush()
                 logger.debug("Current speed is {} per sentence".
                         format((time.time() - start_time) / (i + 1)))
         print "Total cost of the translations: {}".format(total_cost)
 
         fsrc.close()
-        ftrans.close()
+        args.trans.close()
     else:
         raise NotImplementedError
 
