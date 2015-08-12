@@ -22,11 +22,13 @@ new_dict = {}
 for old_key in top_unigram:
     if old_key == '<eps>': # Don't consider the empty string
         continue
+    if old_key not in src_w2i:
+        continue
     new_key = src_w2i[old_key] # Convert source word to its index
     if new_key >= args.vocab_size:
         continue
     old_value = top_unigram[old_key] # This is a list of words (with the most probable one first)
-    new_value = [trg_w2i[elt] for elt in old_value if (trg_w2i[elt] < args.vocab_size)]
+    new_value = [trg_w2i[elt] for elt in old_value if (elt in trg_w2i and trg_w2i[elt] < args.vocab_size)]
     if len(new_value) >= 1:
         new_dict[new_key] = new_value
 
