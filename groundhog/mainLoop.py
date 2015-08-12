@@ -263,6 +263,7 @@ class MainLoop(object):
     # FIXME
     def load(self, model_path=None, timings_path=None, algo_path=None, large_path=None):
         self.save_iter = self.state['save_iter']
+        if self.save_iter < 0: return
         if model_path is None:
             if not self.state['overwrite']:
                 model_path = self.state['prefix'] + 'model' + str(self.save_iter) + '.npz'
