@@ -629,6 +629,14 @@ class MainLoop(object):
                                     self.model.total_num_batches = max(self.model.rolling_vocab_dict)
                                     self.model.Dx_shelve = shelve.open(self.state['Dx_file'])
                                     self.model.Dy_shelve = shelve.open(self.state['Dy_file'])
+                                    #round up/down number of steps so modulo is 0 (hack because total_num_batches can change)
+                                    logger.debug("step before restart: {0}".format(self.step))
+                                    if self.step % self.model.total_num_batches < self.model.total_num_batches / 2:
+                                        self.step -= self.step % self.model.total_num_batches
+                                    else:
+                                        self.step += self.model.total_num_batches - (self.step % self.model.total_num_batches)
+                                    logger.debug("step after restart: {0}".format(self.step))
+
                                 logger.debug("Load data")
                                 self.train_data = get_batch_iterator(self.state, numpy.random.RandomState(self.state['seed']))
                                 self.train_data.start(-1)
@@ -644,7 +652,11 @@ class MainLoop(object):
                                     self.roll_vocab_large2small()
 
                                 self.algo.data = self.train_data
+                                self.algo.step = self.step
                                 tmp_batch = self.train_data.next(peek=True)
+
+                                if self.hooks:
+                                    self.hooks[0].train_iter = self.train_data
                             else:
                                 raise
                         if (tmp_batch['x'][:,0].tolist(), tmp_batch['y'][:,0].tolist()) == self.model.rolling_vocab_dict[step_modulo]:
