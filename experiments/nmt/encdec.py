@@ -164,7 +164,7 @@ def get_batch_iterator(state, rng):
                     lens = numpy.asarray([map(len, x), map(len, y)])
                     # hack to sort 'empty' source sentences (only <null> word) together
                     for idx, item in enumerate(x):
-                        if len(item) == 1 and item[0] == 2:
+                        if item[0] == 2:
                             lens[0][idx] += 1000.0
                     order = numpy.argsort(lens.sum(axis=0)) if state['sort_k_batches'] > 1 \
                             else numpy.arange(len(x))
