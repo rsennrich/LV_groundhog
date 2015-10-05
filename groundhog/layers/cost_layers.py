@@ -153,6 +153,9 @@ class CostLayer(Layer):
         initialization or small isotropic noise.
         """
         if self.rank_n_approx:
+            b_em = self.bias_fn(self.n_out,
+                                self.bias_scale,
+                                self.rng)
             W_em1 = self.init_fn(self.n_in,
                                  self.rank_n_approx,
                                  self.sparsity,
@@ -167,15 +170,14 @@ class CostLayer(Layer):
                                        name='W1_%s' % self.name)
             self.W_em2 = theano.shared(W_em2,
                                        name='W2_%s' % self.name)
-            self.b_em = theano.shared(
-                self.bias_fn(self.n_out, self.bias_scale, self.rng),
-                name='b_%s' % self.name)
+            self.b_em = theano.shared(b_em,
+                                       name='b_%s' % self.name)
             self.params += [self.W_em1, self.W_em2, self.b_em]
 
             if self.weight_noise:
                 self.nW_em1 = theano.shared(W_em1*0.,
                                             name='noise_W1_%s' % self.name)
-                self.nW_em2 = theano.shared(W_em*0.,
+                self.nW_em2 = theano.shared(W_em2*0.,
                                             name='noise_W2_%s' % self.name)
                 self.nb_em = theano.shared(b_em*0.,
                                            name='noise_b_%s' % self.name)
