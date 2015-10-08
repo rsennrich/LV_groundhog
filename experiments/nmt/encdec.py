@@ -1184,7 +1184,12 @@ class Decoder(EncoderDecoderBase):
                         (y.shape[0], y.shape[1], self.state['dim']))).reshape(
                                 readout.out.shape)
         for fun in self.output_nonlinearities:
-            readout = fun(readout)
+            # only use dropout during training
+            if isinstance(fun, DropOp):
+                readout = fun(readout, use_noise= mode == Decoder.EVALUATION)
+            else:
+                readout = fun(readout)
+
 
         if mode == Decoder.SAMPLING:
             sample = self.output_layer.get_sample(

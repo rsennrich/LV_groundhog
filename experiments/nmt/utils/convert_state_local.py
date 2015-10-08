@@ -15,6 +15,7 @@ del d['large_vocab_target']
 del d['rolling_vocab']
 del d['save_algo']
 del d['save_gs']
+d['weight_noise'] = False
 
 with open(args.final_state,'w') as f:
     cPickle.dump(d, f, 0)
