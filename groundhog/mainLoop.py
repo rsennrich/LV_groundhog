@@ -658,6 +658,7 @@ class MainLoop(object):
                                 if self.hooks:
                                     self.hooks[0].train_iter = self.train_data
                             else:
+                                self.save()
                                 raise
                         if (tmp_batch['x'][:,0].tolist(), tmp_batch['y'][:,0].tolist()) == self.model.rolling_vocab_dict[step_modulo]:
                             logger.debug("Identical first sentences. OK")
