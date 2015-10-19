@@ -260,8 +260,8 @@ def parse_args():
                   <0: longer ones")
     parser.add_argument("--models", nargs = '+', required=True,
             help="path to the models")
-    parser.add_argument("--changes",
-            nargs="?", default="",
+    parser.add_argument("changes",
+            nargs="*", default="",
             help="Changes to state")
     return parser.parse_args()
 
@@ -271,7 +271,6 @@ def main():
     state = prototype_phrase_state()
     with open(args.state) as src:
         state.update(cPickle.load(src))
-    state.update(eval("dict({})".format(args.changes)))
 
     logging.basicConfig(level=getattr(logging, state['level']), format="%(asctime)s: %(name)s: %(levelname)s: %(message)s")
 
@@ -285,6 +284,16 @@ def main():
         state['save_iter'] = -1
     if 'var_src_len' not in state:
         state['var_src_len'] = False
+
+    model_specific_state = [state.copy() for i in xrange(len(args.models))]
+    for change in args.changes:
+        try:
+            i, ch = change.split(':')
+            model_specific_state[int(i)].update(eval("dict({})".format(ch)))
+        except ValueError:
+            state.update(eval("dict({})".format(change)))
+            for s in model_specific_state:
+                s.update(eval("dict({})".format(change)))
 
     with open(args.topn_file, 'rb') as f:
         topn = cPickle.load(f) # Load dictionary (source word index : list of target word indices)
