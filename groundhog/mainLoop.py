@@ -670,7 +670,26 @@ class MainLoop(object):
                         [fn() for fn in self.hooks]
                     # Hook first so that the peeked batch is the same as the one used in algo
                     # Use elif not to peek twice
-                rvals = self.algo()
+                try:
+                    rvals = self.algo()
+                except StopIteration:
+                    if self.state['reprocess_each_iteration']:
+                        logger.info("Reached end of file; re-preprocessing")
+                        subprocess.check_call(self.state['reprocess_each_iteration'], shell=True)
+                        logger.debug("Load data")
+                        self.train_data = get_batch_iterator(self.state, numpy.random.RandomState(self.state['seed']))
+                        self.train_data.start(-1)
+                        self.timings['next_offset'] = -1
+                        self.algo.data = self.train_data
+                        self.algo.step = self.step
+
+                        rvals = self.algo()
+
+                        if self.hooks:
+                            self.hooks[0].train_iter = self.train_data
+                    else:
+                        self.save()
+                        raise
                 self.state['traincost'] = float(rvals['cost'])
                 self.state['step'] = self.step
                 last_cost = rvals['cost']
