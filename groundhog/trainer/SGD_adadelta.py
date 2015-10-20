@@ -13,6 +13,7 @@ __contact__ = "Razvan Pascanu <r.pascanu@gmail>"
 import numpy
 import time
 import logging
+import cPickle
 
 import theano
 import theano.tensor as TT
@@ -63,7 +64,7 @@ class SGD(object):
         else:
             self.restricted_list = []
         self.filters = [0.0 if p.name in self.restricted_list else 1.0 for p in model.params]
-        self.filters_lm = [0.0 if (p.name in self.restricted_list or 'enc' in p.name or p.name in ['A_dec_transition_0', 'D_dec_transition_0']) else 1.0 for p in model.params]
+        self.filters_lm = [0.0 if (p.name in self.restricted_list or 'enc' in p.name or p.name in ['A_dec_transition_0', 'D_dec_transition_0', 'W_0_dec_dec_inputter_0', 'W_0_dec_dec_reseter_0', 'W_0_dec_dec_updater_0']) else 1.0 for p in model.params]
         self.gs = [theano.shared(numpy.zeros(p.get_value(borrow=True).shape,
                                              dtype=theano.config.floatX),
                                 name=p.name)
@@ -178,12 +179,13 @@ class SGD(object):
                         'time_step',
                         'whole_time', 'lr']
         self.prev_batch = None
+        self.null_word = cPickle.load(open(self.state['word_indx']))['<null>']
 
     def __call__(self):
         batch = self.data.next()
         assert batch
 
-        null_inputs = sum(batch['x'][0] == 2) / float(len(batch['x'][0]))
+        null_inputs = sum(batch['x'][0] == self.null_word) / float(len(batch['x'][0]))
 
         if self.state['rolling_vocab']: # Assumes batch is a dictionary
             batch['x'] = replace_array(batch['x'], self.model.large2small_src)
