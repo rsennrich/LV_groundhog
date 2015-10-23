@@ -142,7 +142,7 @@ def get_batch_iterator(state, rng):
             PytablesBitextIterator.__init__(self, *args, **kwargs)
             self.batch_iter = None
             self.peeked_batch = None
-            self.null_word = cPickle.load(open(self.state['word_indx']))['<null>']
+            self.null_word = cPickle.load(open(state['word_indx']))['<null>']
 
         def get_homogenous_batch_iter(self):
             stop = False
