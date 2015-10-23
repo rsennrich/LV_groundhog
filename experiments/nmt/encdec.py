@@ -3,6 +3,7 @@ import logging
 import pprint
 import operator
 import itertools
+import cPickle
 
 import theano
 import theano.tensor as TT
@@ -141,6 +142,7 @@ def get_batch_iterator(state, rng):
             PytablesBitextIterator.__init__(self, *args, **kwargs)
             self.batch_iter = None
             self.peeked_batch = None
+            self.null_word = cPickle.load(open(self.state['word_indx']))['<null>']
 
         def get_homogenous_batch_iter(self):
             stop = False
@@ -164,8 +166,8 @@ def get_batch_iterator(state, rng):
                     lens = numpy.asarray([map(len, x), map(len, y)])
                     # hack to sort 'empty' source sentences (only <null> word) together
                     for idx, item in enumerate(x):
-                        if len(item) and item[0] == 2:
-                            lens[0][idx] += 1000.0
+                        if len(item) and item[0] == self.null_word:
+                            lens[0][idx] -= 1000.0
                     order = numpy.argsort(lens.sum(axis=0)) if state['sort_k_batches'] > 1 \
                             else numpy.arange(len(x))
                 for k in range(k_batches):
