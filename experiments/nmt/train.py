@@ -8,6 +8,8 @@ import shelve
 
 import numpy
 
+from subprocess import Popen, PIPE
+
 from groundhog.utils import sample_zeros, sample_weights_orth, init_bias, sample_weights_classic
 from groundhog.utils import replace_array
 from groundhog.trainer.SGD_adadelta import SGD as SGD_adadelta
@@ -71,6 +73,34 @@ class RandomSamplePrinter(object):
                 else:
                     self.model.get_samples(self.state['seqlen'] + 1, self.state['n_samples'], x[:len(x_words)])
                 sample_idx += 1
+
+
+class ExternalValidator(object):
+    """
+    Object that calls an external script for validation
+    """
+
+    def __init__(self, state, model):
+        self.state = state
+        self.script = state['external_validation_script']
+        self.model = model
+
+    def __call__(self):
+
+        logger.info("Calling external validation script")
+        self.model.save(self.state['prefix'] + 'model_dev.npz')
+        if self.state['rolling_vocab'] and not self.state['fixed_embeddings']:
+            vals = {}
+            vals['large_W_0_enc_approx_embdr'] = self.model.large_W_0_enc_approx_embdr
+            vals['large_W_0_dec_approx_embdr'] = self.model.large_W_0_dec_approx_embdr
+            vals['large_W2_dec_deep_softmax'] = self.model.large_W2_dec_deep_softmax
+            vals['large_b_dec_deep_softmax'] = self.model.large_b_dec_deep_softmax
+            numpy.savez(self.state['prefix']+'large_dev.npz', **vals)
+
+        p = Popen(self.script)
+
+        # we let process run concurrently. Uncommenting the line below makes the main process wait for the validation to finish.
+        #p.wait()
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -156,12 +186,16 @@ def main():
         lm_model.Dx_shelve = shelve.open(state['Dx_file'])
         lm_model.Dy_shelve = shelve.open(state['Dy_file'])
 
+    hooks = []
+    if state['hookFreq'] >= 0:
+        hooks.append(RandomSamplePrinter(state, lm_model, train_data))
+        if 'external_validation_script' in state and state['external_validation_script']:
+            hooks.append(ExternalValidator(state, lm_model))
+
     logger.debug("Run training")
     main = MainLoop(train_data, None, None, lm_model, algo, state, None,
             reset=state['reset'],
-            hooks=[RandomSamplePrinter(state, lm_model, train_data)]
-                if state['hookFreq'] >= 0
-                else None)
+            hooks= hooks)
     if state['reload']:
         main.load()
     if state['loopIters'] > 0:
