@@ -185,7 +185,15 @@ class SGD(object):
         batch = self.data.next()
         assert batch
 
-        null_inputs = sum(batch['x'][0] == self.null_word) / float(len(batch['x'][0]))
+        null_inputs = sum(batch['x'].flatten() == self.null_word) / float(len(batch['x'][0]))
+
+        # replace occurrences of <null> with </s> (<null> should be last word in sentence)
+        for i in range(1, len(batch['x'])-1):
+            batch['x_mask'][i+1][batch['x'][i] == self.null_word] = 0
+        batch['x'][batch['x'] == self.null_word] = 0
+
+        # if <null> was only word in sentence, add it back in to prevent empty input
+        batch['x'][0][batch['x'][0] == 0] = self.null_word
 
         if self.state['rolling_vocab']: # Assumes batch is a dictionary
             batch['x'] = replace_array(batch['x'], self.model.large2small_src)

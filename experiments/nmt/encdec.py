@@ -164,9 +164,9 @@ def get_batch_iterator(state, rng):
                     x = numpy.asarray(list(itertools.chain(*map(operator.itemgetter(0), data))))
                     y = numpy.asarray(list(itertools.chain(*map(operator.itemgetter(1), data))))
                     lens = numpy.asarray([map(len, x), map(len, y)])
-                    # hack to sort 'empty' source sentences (only <null> word) together
+                    # hack to sort 'empty' or 'synthetic' source sentences (containing <null> word) together, so we can use different update function for batch (in SGD_adadelta)
                     for idx, item in enumerate(x):
-                        if len(item) and item[0] == self.null_word:
+                        if len(item) and self.null_word in item:
                             lens[0][idx] -= 1000.0
                     order = numpy.argsort(lens.sum(axis=0)) if state['sort_k_batches'] > 1 \
                             else numpy.arange(len(x))
