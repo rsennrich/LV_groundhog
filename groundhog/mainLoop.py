@@ -22,6 +22,7 @@ class Unbuffered:
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
 
+import os
 import sys
 import traceback
 sys.stdout = Unbuffered(sys.stdout)
@@ -33,9 +34,13 @@ import gzip
 import time
 import signal
 import logging
+import shelve
+import copy
+import subprocess
 
 from groundhog.utils import print_mem, print_time
 from groundhog.utils import invert_dict
+from experiments.nmt import get_batch_iterator, rolling_dicts
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +263,7 @@ class MainLoop(object):
     # FIXME
     def load(self, model_path=None, timings_path=None, algo_path=None, large_path=None):
         self.save_iter = self.state['save_iter']
+        if self.save_iter < 0: return
         if model_path is None:
             if not self.state['overwrite']:
                 model_path = self.state['prefix'] + 'model' + str(self.save_iter) + '.npz'
@@ -607,7 +613,53 @@ class MainLoop(object):
                             new_large2small_trgt = self.model.Dy_shelve[str(step_modulo)]
                             self.roll_vocab_update_dicts(new_large2small_src, new_large2small_trgt) # Done above for 0 or reloaded model
                         self.roll_vocab_large2small()
-                        tmp_batch = self.train_data.next(peek=True)
+                        try:
+                            tmp_batch = self.train_data.next(peek=True)
+                        except StopIteration:
+                            if self.state['reprocess_each_iteration']:
+                                logger.info("Reached end of file; re-preprocessing")
+                                subprocess.check_call(self.state['reprocess_each_iteration'], shell=True)
+                                if self.state['rolling_vocab']:
+                                    os.remove(self.state['Dx_file'])
+                                    os.remove(self.state['Dy_file'])
+                                    tmp_state = copy.deepcopy(self.state)
+                                    rolling_dicts.main(tmp_state)
+                                    with open(self.state['rolling_vocab_dict'], 'rb') as f:
+                                        self.model.rolling_vocab_dict = cPickle.load(f)
+                                    self.model.total_num_batches = max(self.model.rolling_vocab_dict)
+                                    self.model.Dx_shelve = shelve.open(self.state['Dx_file'])
+                                    self.model.Dy_shelve = shelve.open(self.state['Dy_file'])
+                                    #round up/down number of steps so modulo is 0 (hack because total_num_batches can change)
+                                    logger.debug("step before restart: {0}".format(self.step))
+                                    if self.step % self.model.total_num_batches < self.model.total_num_batches / 2:
+                                        self.step -= self.step % self.model.total_num_batches
+                                    else:
+                                        self.step += self.model.total_num_batches - (self.step % self.model.total_num_batches)
+                                    logger.debug("step after restart: {0}".format(self.step))
+
+                                logger.debug("Load data")
+                                self.train_data = get_batch_iterator(self.state, numpy.random.RandomState(self.state['seed']))
+                                self.train_data.start(-1)
+                                self.timings['next_offset'] = -1
+
+                                step_modulo = self.step % self.model.total_num_batches
+                                if step_modulo in self.model.rolling_vocab_dict:
+                                    if not self.zero_or_reload:
+                                        self.roll_vocab_small2large() # Not necessary for 0 or when reloading a properly saved model
+                                        new_large2small_src = self.model.Dx_shelve[str(step_modulo)]
+                                        new_large2small_trgt = self.model.Dy_shelve[str(step_modulo)]
+                                        self.roll_vocab_update_dicts(new_large2small_src, new_large2small_trgt) # Done above for 0 or reloaded model
+                                    self.roll_vocab_large2small()
+
+                                self.algo.data = self.train_data
+                                self.algo.step = self.step
+                                tmp_batch = self.train_data.next(peek=True)
+
+                                if self.hooks:
+                                    self.hooks[0].train_iter = self.train_data
+                            else:
+                                self.save()
+                                raise
                         if (tmp_batch['x'][:,0].tolist(), tmp_batch['y'][:,0].tolist()) == self.model.rolling_vocab_dict[step_modulo]:
                             logger.debug("Identical first sentences. OK")
                         else:
@@ -618,7 +670,26 @@ class MainLoop(object):
                         [fn() for fn in self.hooks]
                     # Hook first so that the peeked batch is the same as the one used in algo
                     # Use elif not to peek twice
-                rvals = self.algo()
+                try:
+                    rvals = self.algo()
+                except StopIteration:
+                    if self.state['reprocess_each_iteration']:
+                        logger.info("Reached end of file; re-preprocessing")
+                        subprocess.check_call(self.state['reprocess_each_iteration'], shell=True)
+                        logger.debug("Load data")
+                        self.train_data = get_batch_iterator(self.state, numpy.random.RandomState(self.state['seed']))
+                        self.train_data.start(-1)
+                        self.timings['next_offset'] = -1
+                        self.algo.data = self.train_data
+                        self.algo.step = self.step
+
+                        rvals = self.algo()
+
+                        if self.hooks:
+                            self.hooks[0].train_iter = self.train_data
+                    else:
+                        self.save()
+                        raise
                 self.state['traincost'] = float(rvals['cost'])
                 self.state['step'] = self.step
                 last_cost = rvals['cost']

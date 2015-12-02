@@ -13,6 +13,7 @@ __contact__ = "Razvan Pascanu <r.pascanu@gmail>"
 import numpy
 import time
 import logging
+import cPickle
 
 import theano
 import theano.tensor as TT
@@ -63,6 +64,7 @@ class SGD(object):
         else:
             self.restricted_list = []
         self.filters = [0.0 if p.name in self.restricted_list else 1.0 for p in model.params]
+        self.filters_lm = [0.0 if (p.name in self.restricted_list or 'enc' in p.name or p.name in ['A_dec_transition_0', 'D_dec_transition_0', 'W_0_dec_dec_inputter_0', 'W_0_dec_dec_reseter_0', 'W_0_dec_dec_updater_0']) else 1.0 for p in model.params]
         self.gs = [theano.shared(numpy.zeros(p.get_value(borrow=True).shape,
                                              dtype=theano.config.floatX),
                                 name=p.name)
@@ -146,17 +148,28 @@ class SGD(object):
                 for p, g, gn2, dn2, filter in
                 zip(model.params, self.gs, self.gnorm2, self.dnorm2, self.filters)]
 
+        new_params_lm = [p - filter * (TT.sqrt(dn2 + eps) / TT.sqrt(gn2 + eps)) * g
+                for p, g, gn2, dn2, filter in
+                zip(model.params, self.gs, self.gnorm2, self.dnorm2, self.filters_lm)]
+
         updates = zip(model.params, new_params)
+        updates_lm = zip(model.params, new_params_lm)
         # d2
         d2_up = [(dn2, rho * dn2 + (1. - rho) *
             (((TT.sqrt(dn2 + eps) / TT.sqrt(gn2 + eps)) * g) ** 2.))
             for dn2, gn2, g in zip(self.dnorm2, self.gnorm2, self.gs)]
         updates = updates + d2_up
+        updates_lm = updates_lm + d2_up
 
         self.update_fn = theano.function(
             [], [], name='update_function',
             allow_input_downcast=True,
             updates = updates)
+
+        self.update_fn_lm = theano.function(
+            [], [], name='update_function',
+            allow_input_downcast=True,
+            updates = updates_lm)
 
         self.old_cost = 1e20
         self.schedules = model.get_schedules()
@@ -166,11 +179,22 @@ class SGD(object):
                         'time_step',
                         'whole_time', 'lr']
         self.prev_batch = None
+        self.null_word = cPickle.load(open(self.state['word_indx']))['<null>']
 
     def __call__(self):
         batch = self.data.next()
         assert batch
-        
+
+        null_inputs = sum(batch['x'].flatten() == self.null_word) / float(len(batch['x'][0]))
+
+        # replace occurrences of <null> with </s> (<null> should be last word in sentence)
+        for i in range(1, len(batch['x'])-1):
+            batch['x_mask'][i+1][batch['x'][i] == self.null_word] = 0
+        batch['x'][batch['x'] == self.null_word] = 0
+
+        # if <null> was only word in sentence, add it back in to prevent empty input
+        batch['x'][0][batch['x'][0] == 0] = self.null_word
+
         if self.state['rolling_vocab']: # Assumes batch is a dictionary
             batch['x'] = replace_array(batch['x'], self.model.large2small_src)
             batch['y'] = replace_array(batch['y'], self.model.large2small_trgt)
@@ -194,7 +218,10 @@ class SGD(object):
         rvals = self.train_fn()
         for schedule in self.schedules:
             schedule(self, rvals[-1])
-        self.update_fn()
+        if null_inputs > 0.5:
+            self.update_fn_lm()
+        else:
+            self.update_fn()
         g_ed = time.time()
         self.state['lr'] = float(self.lr)
         cost = rvals[-1]

@@ -220,7 +220,12 @@ class PytablesBitextFetcher(threading.Thread):
                     diter.queue.put(None)
                 else:
                     diter.queue.put(None)
+                    target_table.close()
+                    source_table.close()
                     return
+
+        target_table.close()
+        source_table.close()
 
 class PytablesBitextIterator(object):
 
@@ -252,7 +257,7 @@ class PytablesBitextIterator(object):
 
     def __del__(self):
         if hasattr(self, 'gather'):
-            self.gather.exitFlag = True
+            self.exit_flag = True
             self.gather.join()
 
     def __iter__(self):

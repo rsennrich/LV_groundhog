@@ -8,10 +8,6 @@ import shelve
 
 import numpy
 
-from groundhog.trainer.SGD_adadelta import SGD as SGD_adadelta
-from groundhog.trainer.SGD import SGD as SGD
-from groundhog.trainer.SGD_momentum import SGD as SGD_momentum
-from groundhog.mainLoop import MainLoop
 from experiments.nmt import\
         RNNEncoderDecoder, prototype_search_state, get_batch_iterator
 import experiments.nmt
@@ -28,18 +24,7 @@ def parse_args():
     parser.add_argument("changes",  nargs="*", help="Changes to state", default="")
     return parser.parse_args()
 
-def main():
-    args = parse_args()
-
-    state = getattr(experiments.nmt, args.proto)()
-    if args.state:
-        if args.state.endswith(".py"):
-            state.update(eval(open(args.state).read()))
-        else:
-            with open(args.state) as src:
-                state.update(cPickle.load(src))
-    for change in args.changes:
-        state.update(eval("dict({})".format(change)))
+def main(state):
 
     logging.basicConfig(level=getattr(logging, state['level']), format="%(asctime)s: %(name)s: %(levelname)s: %(message)s")
     logger.debug("State:\n{}".format(pprint.pformat(state)))
@@ -180,4 +165,16 @@ def main():
     Dy_file.close()
 
 if __name__ == "__main__":
-    main()
+
+    args = parse_args()
+    state = getattr(experiments.nmt, args.proto)()
+    if args.state:
+        if args.state.endswith(".py"):
+            state.update(eval(open(args.state).read()))
+        else:
+            with open(args.state) as src:
+                state.update(cPickle.load(src))
+    for change in args.changes:
+        state.update(eval("dict({})".format(change)))
+
+    main(state)

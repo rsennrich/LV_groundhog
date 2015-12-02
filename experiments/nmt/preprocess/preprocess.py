@@ -154,9 +154,9 @@ def create_dictionary():
     else:
         logger.info("Creating dictionary of all words")
         vocab_count = counter.most_common()
-    vocab = {'UNK': 1, '<s>': 0, '</s>': 0}
+    vocab = {'UNK': 1, '<s>': 0, '</s>': 0, '<null>': 2}
     for i, (word, count) in enumerate(vocab_count):
-        vocab[word] = i + 2
+        vocab[word] = i + 3
     safe_pickle(vocab, args.dictionary)
     return combined_counter, sentence_counts, counters, vocab
 

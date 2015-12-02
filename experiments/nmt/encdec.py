@@ -3,6 +3,7 @@ import logging
 import pprint
 import operator
 import itertools
+import cPickle
 
 import theano
 import theano.tensor as TT
@@ -141,6 +142,7 @@ def get_batch_iterator(state, rng):
             PytablesBitextIterator.__init__(self, *args, **kwargs)
             self.batch_iter = None
             self.peeked_batch = None
+            self.null_word = cPickle.load(open(state['word_indx']))['<null>']
 
         def get_homogenous_batch_iter(self):
             stop = False
@@ -162,7 +164,11 @@ def get_batch_iterator(state, rng):
                     x = numpy.asarray(list(itertools.chain(*map(operator.itemgetter(0), data))))
                     y = numpy.asarray(list(itertools.chain(*map(operator.itemgetter(1), data))))
                     lens = numpy.asarray([map(len, x), map(len, y)])
-                    order = numpy.argsort(lens.max(axis=0)) if state['sort_k_batches'] > 1 \
+                    # hack to sort 'empty' or 'synthetic' source sentences (containing <null> word) together, so we can use different update function for batch (in SGD_adadelta)
+                    for idx, item in enumerate(x):
+                        if len(item) and self.null_word in item:
+                            lens[0][idx] -= 1000.0
+                    order = numpy.argsort(lens.sum(axis=0)) if state['sort_k_batches'] > 1 \
                             else numpy.arange(len(x))
                 for k in range(k_batches):
                     indices = order[k * batch_size:(k + 1) * batch_size]
@@ -200,7 +206,7 @@ def get_batch_iterator(state, rng):
         can_fit=False,
         queue_size=1000,
         shuffle=state['shuffle'],
-        use_infinite_loop=state['use_infinite_loop'],
+        use_infinite_loop=state['use_infinite_loop'] and not state['reprocess_each_iteration'],
         max_len=state['seqlen'])
     return train_data
 
@@ -1180,7 +1186,12 @@ class Decoder(EncoderDecoderBase):
                         (y.shape[0], y.shape[1], self.state['dim']))).reshape(
                                 readout.out.shape)
         for fun in self.output_nonlinearities:
-            readout = fun(readout)
+            # only use dropout during training
+            if isinstance(fun, DropOp):
+                readout = fun(readout, use_noise= mode == Decoder.EVALUATION)
+            else:
+                readout = fun(readout)
+
 
         if mode == Decoder.SAMPLING:
             sample = self.output_layer.get_sample(
