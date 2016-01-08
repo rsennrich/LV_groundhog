@@ -1371,8 +1371,10 @@ class RNNEncoderDecoder(object):
                 skip_init=self.skip_init, compute_alignment=self.compute_alignment)
         self.decoder.create_layers()
         logger.debug("Build log-likelihood computation graph")
+        ctx = Concatenate(axis=2)(*training_c_components)
+        self.ctx = ctx.out
         self.predictions, self.alignment = self.decoder.build_decoder(
-                c=Concatenate(axis=2)(*training_c_components), c_mask=self.x_mask,
+                c=ctx, c_mask=self.x_mask,
                 y=self.y, y_mask=self.y_mask)
 
         # Annotation for sampling
